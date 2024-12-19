@@ -14,7 +14,7 @@ from langchain.vectorstores import FAISS
 
 
 MESSAGE_SESSION_KEY = "message_history"
-OPENAI_SESSION_KEY = "openai_session_key"
+OPENAI_API_SESSION_KEY = "oPENAI_API_SESSION_KEY"
 MEMORY_SESSION_KEY = "langchain_buffer_memory"
 
 FILES_DIR = "./cache/files"
@@ -34,8 +34,8 @@ if MEMORY_SESSION_KEY not in st.session_state:
         return_messages=True,
     )
 
-if OPENAI_SESSION_KEY not in st.session_state:
-    st.session_state[OPENAI_SESSION_KEY] = ""
+if OPENAI_API_SESSION_KEY not in st.session_state:
+    st.session_state[OPENAI_API_SESSION_KEY] = ""
 
 
 class ChatCallbackHandler(BaseCallbackHandler):
@@ -52,13 +52,6 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box.markdown(self.message)
 
 
-chat = ChatOpenAI(
-    temperature=0.1,
-    streaming=True,
-    callbacks=[
-        ChatCallbackHandler(),
-    ]
-)
 memory = st.session_state[MEMORY_SESSION_KEY]
 
 with st.sidebar:
@@ -73,15 +66,15 @@ with st.sidebar:
     api_key_input = st.text_input(
         label="Open AI API를 입력해 주세요!",
         type="password",
-        disabled=bool(st.session_state[OPENAI_SESSION_KEY]),
+        disabled=bool(st.session_state[OPENAI_API_SESSION_KEY]),
         autocomplete="off",
     )
 
-    if api_key_input and not st.session_state[OPENAI_SESSION_KEY]:
-        st.session_state[OPENAI_SESSION_KEY] = api_key_input
+    if api_key_input and not st.session_state[OPENAI_API_SESSION_KEY]:
+        st.session_state[OPENAI_API_SESSION_KEY] = api_key_input
         st.experimental_rerun()  # 변경이 안되는 문제가 생겨 새로고침!
 
-    if st.session_state[OPENAI_SESSION_KEY]:
+    if st.session_state[OPENAI_API_SESSION_KEY]:
         file = st.file_uploader(
             label="`.txt .pdf .docx` 문서 파일을 업로드 해주세요.",
             type=["txt", "pdf", "docx"],
@@ -156,6 +149,15 @@ prompt = ChatPromptTemplate.from_messages(
 
 
 def invoke_chain(question):
+
+    chat = ChatOpenAI(
+        temperature=0.1,
+        streaming=True,
+        callbacks=[
+            ChatCallbackHandler(),
+        ],
+        api_key=st.session_state[OPENAI_API_SESSION_KEY]
+    )
     chain = {
         "context": retriever | RunnableLambda(format_docs),
         "question": RunnablePassthrough(),
@@ -170,7 +172,7 @@ def invoke_chain(question):
     )
 
 
-if st.session_state[OPENAI_SESSION_KEY]:
+if st.session_state[OPENAI_API_SESSION_KEY]:
     if file:
         retriever = embed_file(file)
 
