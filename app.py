@@ -119,7 +119,9 @@ def embed_file(file):
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(splitter)
 
-    embeddings = OpenAIEmbeddings()
+    embeddings = OpenAIEmbeddings(
+        api_key=st.session_state[OPENAI_API_SESSION_KEY]
+    )
     # embeddings 파일로 cache
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
         embeddings, cache_dir
