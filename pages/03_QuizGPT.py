@@ -41,7 +41,6 @@ questions_prompt = ChatPromptTemplate.from_messages(
         ("system", """
             당신은 교사역활을 하는 assistant 입니다.
             아래의 내용에 따라 유저의 지식을 테스트하기 위해 10개의 질문을 만드세요.
-            질문의 정답은 틀림이 없어야 합니다.
 
             각 문제에는 4개의 답이 있어야 하며, 그 중 3개는 틀린 답이고, 1개는 정답이어야 합니다.
 
@@ -175,7 +174,8 @@ def run_quiz_chain(_docs, topic):
 @st.cache_data(show_spinner="Searching Wikipidia...")
 def wiki_search(term):
     retriever = WikipediaRetriever(top_k_results=1)
-    return retriever.get_relevant_documents(term)
+    docs = retriever.get_relevant_documents(term)
+    return docs
 
 
 with st.sidebar:
@@ -184,12 +184,13 @@ with st.sidebar:
     choice = st.selectbox(
         "Choose what you want to use.",
         (
-            "File", "Wikipedia Article"
+            "File",
+            "Wikipedia Article",
         ),
     )
     if choice == "File":
         file = st.file_uploader(
-            "Upload a .docx , .txt , .pdf file",
+            "Upload a .docx , .txt or .pdf file",
             type=["pdf", "txt", "docx"],
         )
         if file:
@@ -211,8 +212,18 @@ if not docs:
     """)
 else:
 
-    start = st.button("Generate Quiz")
+    response = run_quiz_chain(docs, topic if topic else file.name)
 
-    if start:
-        response = run_quiz_chain(docs, topic if topic else file.name)
-        st.write(response)
+    with st.form("questions_form"):
+        for question in response["questions"]:
+            st.write(question["question"])
+            value = st.radio(
+                "Select an options",
+                [answer["answer"] for answer in question["answers"]],
+                index=None,
+            )
+            if {"answer": value, "correct": True} in question["answers"]:
+                st.success("정답")
+            elif value is not None:
+                st.error("오답")
+        button = st.form_submit_button()
