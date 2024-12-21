@@ -5,6 +5,17 @@ from langchain.document_loaders import UnstructuredFileLoader
 from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks import StreamingStdOutCallbackHandler
+from langchain.schema import BaseOutputParser
+
+
+class JsonOutputParser(BaseOutputParser):
+    def parse(self, text):
+        import json
+        text = text.replace("```", "").replace("json", "")
+        return json.loads(text)
+
+
+output_parser = JsonOutputParser()
 
 st.set_page_config(
     page_title="QuizGPT",
@@ -30,6 +41,7 @@ questions_prompt = ChatPromptTemplate.from_messages(
         ("system", """
             당신은 교사역활을 하는 assistant 입니다.
             아래의 내용에 따라 유저의 지식을 테스트하기 위해 10개의 질문을 만드세요.
+            질문의 정답은 꼭 문서에서 찾아야 합니다.
 
             각 문제에는 4개의 답이 있어야 하며, 그 중 3개는 틀린 답이고, 1개는 정답이어야 합니다.
 
@@ -48,6 +60,7 @@ questions_prompt = ChatPromptTemplate.from_messages(
              
             Question: Julius Caesar는 누구인가요?
             Answer: 로마 황제(o)|화가|배우|모델
+
              
             Your turn!
             
@@ -57,6 +70,82 @@ questions_prompt = ChatPromptTemplate.from_messages(
 )
 
 questions_chain = {"context": format_docs} | questions_prompt | llm
+
+formatting_prompt = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """
+        당신은 강력한 formatting 알고리즘입니다.
+
+        시험 문제를 JSON 형식으로 포맷합니다. (o)가 표시된 답이 정답입니다.
+
+        Example Input:
+
+        Question: 바다의 색깔은 무엇인가요?
+        Answers: 빨강|노랑|초록|파랑(o)
+
+        Question: 조지아의 수도는 어디인가요?
+        Answer: Baku|Tbilsi(o)|Manila|Beirut
+
+
+        Question: 영화 Avatar는 언제 개봉했나요?
+        Answers: 2007|2001|2009(o)|1998
+
+        Question: Julius Caesar는 누구인가요?
+        Answer: 로마 황제(o)|화가|배우|모델
+
+        Example Output:
+
+        ```json
+        {{
+            "questions": [
+                {{
+                    "question": "바다의 색깔은 무엇인가요?",
+                    "answers": [
+                        {{ "answer": "빨강", "correct": false }},
+                        {{ "answer": "노랑", "correct": false }},
+                        {{ "answer": "초록", "correct": false }},
+                        {{ "answer": "파랑", "correct": true }}
+                    ]
+                }},
+                {{
+                    "question": "조지아의 수도는 어디인가요?",
+                    "answers": [
+                        {{ "answer": "Baku", "correct": false }},
+                        {{ "answer": "Tbilsi", "correct": true }},
+                        {{ "answer": "Manila", "correct": false }},
+                        {{ "answer": "Beirut", "correct": false }}
+                    ]
+                }},
+                {{
+                    "question": "영화 Avatar는 언제 개봉했나요?",
+                    "answers": [
+                        {{ "answer": "2007", "correct": false }},
+                        {{ "answer": "2001", "correct": false }},
+                        {{ "answer": "2009", "correct": true }},
+                        {{ "answer": "1998", "correct": false }}
+                    ]
+                }},
+                {{
+                    "question": "율리우스 카이사르는 누구인가요?",
+                    "answers": [
+                        {{ "answer": "로마 황제", "correct": true }},
+                        {{ "answer": "화가", "correct": false }},
+                        {{ "answer": "배우", "correct": false }},
+                        {{ "answer": "모델", "correct": false }}
+                    ]
+                }}
+            ]
+        }}
+        ```
+        Your turn!
+
+        Questions: {context}
+""",
+    )
+])
+
+formatting_chain = formatting_prompt | llm
 
 
 @st.cache_data(show_spinner="Loading file...")
@@ -96,8 +185,7 @@ with st.sidebar:
         topic = st.text_input("Search Wikipeida...")
         if topic:
             retriever = WikipediaRetriever(
-                top_k_results=2,
-                lang="ko"
+                top_k_results=1,
             )
             with st.status("Searching Wikipidia..."):
                 docs = retriever.get_relevant_documents(topic)
@@ -117,4 +205,7 @@ else:
     start = st.button("Generate Quiz")
 
     if start:
-        questions_chain.invoke(docs)
+        chain = {"context": questions_chain} | formatting_chain | output_parser
+
+        response = chain.invoke(docs)
+        st.write(response)
