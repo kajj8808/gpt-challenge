@@ -41,7 +41,7 @@ questions_prompt = ChatPromptTemplate.from_messages(
         ("system", """
             당신은 교사역활을 하는 assistant 입니다.
             아래의 내용에 따라 유저의 지식을 테스트하기 위해 10개의 질문을 만드세요.
-            질문의 정답은 꼭 문서에서 찾아야 합니다.
+            질문의 정답은 틀림이 없어야 합니다.
 
             각 문제에는 4개의 답이 있어야 하며, 그 중 3개는 틀린 답이고, 1개는 정답이어야 합니다.
 
@@ -51,19 +51,19 @@ questions_prompt = ChatPromptTemplate.from_messages(
 
             Question: 바다의 색깔은 무엇인가요?.
             Answer: 빨강|노랑|초록|파랑(o)
-            
+
             Question: 조지아의 수도는 어디인가요?
             Answer: Baku|Tbilsi(o)|Manila|Beirut
 
             Question: 영화 Avatar는 언제 개봉했나요?
             Answer: 2007|2001|2009(o)|1998
-             
+
             Question: Julius Caesar는 누구인가요?
             Answer: 로마 황제(o)|화가|배우|모델
 
-             
+
             Your turn!
-            
+
             Context: {context}
              """)
     ]
@@ -166,6 +166,18 @@ def split_file(file):
     return docs
 
 
+@st.cache_data(show_spinner="Making quiz...")
+def run_quiz_chain(_docs, topic):
+    chain = {"context": questions_chain} | formatting_chain | output_parser
+    return chain.invoke(_docs)
+
+
+@st.cache_data(show_spinner="Searching Wikipidia...")
+def wiki_search(term):
+    retriever = WikipediaRetriever(top_k_results=1)
+    return retriever.get_relevant_documents(term)
+
+
 with st.sidebar:
     docs = None
     choice = st.selectbox(
@@ -184,11 +196,7 @@ with st.sidebar:
     else:
         topic = st.text_input("Search Wikipeida...")
         if topic:
-            retriever = WikipediaRetriever(
-                top_k_results=1,
-            )
-            with st.status("Searching Wikipidia..."):
-                docs = retriever.get_relevant_documents(topic)
+            docs = wiki_search(topic)
 
 
 if not docs:
@@ -205,7 +213,5 @@ else:
     start = st.button("Generate Quiz")
 
     if start:
-        chain = {"context": questions_chain} | formatting_chain | output_parser
-
-        response = chain.invoke(docs)
+        response = run_quiz_chain(docs, topic if topic else file.name)
         st.write(response)
