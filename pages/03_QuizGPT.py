@@ -180,6 +180,7 @@ def wiki_search(term):
 
 with st.sidebar:
     docs = None
+    topic = None
     choice = st.selectbox(
         "Choose what you want to use.",
         (
