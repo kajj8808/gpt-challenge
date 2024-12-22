@@ -76,7 +76,11 @@ with st.sidebar:
     if st.session_state["openai_api_key"]:
         st.session_state["difficulty"] = st.selectbox("난이도 선택", ["쉬움", "어려움"])
         st.button("문제 생성", on_click=generate_quiz)
-
+    st.markdown(
+        """
+        [Github 링크](https://github.com/kajj8808/gpt-challenge/tree/quiz-gpt-turbo)
+        """
+    )
 
 if st.session_state["questions"]:
     with st.form("questions_form"):
