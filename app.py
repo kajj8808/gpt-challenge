@@ -87,7 +87,7 @@ with st.sidebar:
         st.button("문제 생성", on_click=generate_quiz)
     st.markdown(
         """
-        [Github 링크](https://github.com/kajj8808/gpt-challenge/tree/quiz-gpt-turbo)
+        [Github 링크](https://github.com/kajj8808/gpt-challenge/tree/c96446ed451b2c66ed850097624b958b8ee9a595)
         """
     )
 
