@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 
@@ -13,9 +14,10 @@ if "questions" not in st.session_state:
 
 
 def generate_quiz():
+    st.session_state["quiz_id"] = time.time()
     function = {
         "name": "generate_quiz",
-        "description": "질문과 답변을 난이도에 맞춰 list 형식으로 10개 생성해주는 함수",
+        "description": "질문과 답변을 난이도에 맞춰 list 형식으로 10개 의 질문과 4개의 답변을 생성하는 함수",
         "parameters": {
             "type": "object",
             "properties": {
@@ -55,7 +57,14 @@ def generate_quiz():
     )
 
     prompt = ChatPromptTemplate.from_template(
-        "내가 원하는 난이도는 {difficulty}이고, 한국에 대한 문제를 생성해줘."
+        """
+        당신은 문제 생성을 잘하는 전문 assistant입니다. 
+        아래의 요구사항에 따라 문제을 작성해 주세요:
+        1. 난이도: {difficulty}
+        2. 질문은 한국어로 작성해 주세요.
+        3. 다양한 주제를 다룰 수 있도록 문제의 주제를 분배해 주세요. (예:역사, 과학, 일반 상식 등)
+        4. 정답이 틀리지 않도록 작성해 주세요.
+        """
     )
 
     chain = prompt | llm
@@ -85,11 +94,12 @@ with st.sidebar:
 if st.session_state["questions"]:
     with st.form("questions_form"):
         correct_count = 0
-        for question in st.session_state["questions"]:
+        for i, question in enumerate(st.session_state["questions"]):
             answer = st.radio(
                 question["question"],
                 [answer["answer"] for answer in question["answers"]],
                 index=None,
+                key=f"quiz_{st.session_state['quiz_id']}_{i}"
             )
             if {"answer": answer, "correct": True} in question["answers"]:
                 st.success("정답")
