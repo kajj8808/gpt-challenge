@@ -1,17 +1,24 @@
 import streamlit as st
-from langchain.document_loaders import AsyncChromiumLoader
-from langchain.document_transformers import Html2TextTransformer
+from langchain.document_loaders import SitemapLoader
+
+
+@st.cache_data(show_spinner="loading website...")
+def load_website(url):
+    loader = SitemapLoader(url)
+    docs = loader.load()
+    return docs
+
 
 st.title("QuizGPT")
-
-html2text_transformer = Html2TextTransformer()
 
 
 with st.sidebar:
     url = st.text_input("url 을 입력해 주세요.!", placeholder="https://example.com")
 
 if url:
-    loader = AsyncChromiumLoader([url])
-    docs = loader.load()
-    transformed = html2text_transformer.transform_documents(docs)
-    st.write(docs)
+    if ".xml" not in url:
+        with st.sidebar:
+            st.error("Sitemap URL을 입력해주세요.(.xml)")
+    else:
+        docs = load_website(url)
+        st.write(docs)
