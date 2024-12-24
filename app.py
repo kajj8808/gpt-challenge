@@ -1,115 +1,158 @@
 import streamlit as st
-import time
-from langchain.chat_models import ChatOpenAI
+from langchain.document_loaders import SitemapLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import FAISS
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain.prompts import ChatPromptTemplate
+from langchain.chat_models import ChatOpenAI
 
-st.set_page_config(page_title="Quiz GPT", page_icon="🤔")
 
 if "openai_api_key" not in st.session_state:
     st.session_state["openai_api_key"] = None
-if "difficulty" not in st.session_state:
-    st.session_state["difficulty"] = None
-if "questions" not in st.session_state:
-    st.session_state["questions"] = None
 
-
-def generate_quiz():
-    st.session_state["quiz_id"] = time.time()
-    function = {
-        "name": "generate_quiz",
-        "description": "질문과 답변을 난이도에 맞춰 list 형식으로 10개 의 질문과 4개의 답변을 생성하는 함수",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "questions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "question": {"type": "string"},
-                            "answers": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "answer": {"type": "string"},
-                                        "correct": {"type": "boolean"},
-                                    },
-                                    "required": ["answer", "correct"],
-                                },
-                            },
-                        },
-                    },
-                    "required": ["question", "answers"],
-                },
-
-            },
-        },
-    }
-
-    llm = ChatOpenAI(
-        api_key=st.session_state["openai_api_key"],
-        temperature=0.1,
-        model="gpt-3.5-turbo-0125",
-    ).bind(
-        function_call="auto",
-        functions=[function]
-    )
-
-    prompt = ChatPromptTemplate.from_template(
-        """
-        당신은 문제 생성을 잘하는 전문 assistant입니다. 
-        아래의 요구사항에 따라 문제을 작성해 주세요:
-        1. 난이도: {difficulty}
-            - 쉬움: 일상적인 상식이나 초등학교 수준의 문제. 예) "대한민국의 수도는 무엇인가요?"
-            - 어려움: 대학교 수준 이상의 심화된 지식이나 전문적인 문제. 예) "푸리에 변환의 사용처로 옮바른 것은 무엇인가요?"
-        2. 질문은 한국어로 작성해 주세요.
-        3. 다양한 주제를 다룰 수 있도록 문제의 주제를 분배해 주세요. (예:역사, 과학, 일반 상식 등)
-        """
-    )
-
-    chain = prompt | llm
-
-    response = chain.invoke({"difficulty": st.session_state["difficulty"]})
-    response = response.additional_kwargs["function_call"]["arguments"]
-    import json
-    questions = json.loads(response)
-    st.session_state["questions"] = questions["questions"]
-
+openai_api_key = st.session_state["openai_api_key"]
 
 with st.sidebar:
-    st.title("Quiz GPT")
-    st.write("난이도와 OpenAI API Key를 입력하면 문제를 생성해줍니다.")
-    api_key = st.text_input(
-        "OpenAI API Key를 입력해주세요.")
-    st.session_state["openai_api_key"] = api_key
-    if st.session_state["openai_api_key"]:
-        st.session_state["difficulty"] = st.selectbox("난이도 선택", ["쉬움", "어려움"])
-        st.button("문제 생성", on_click=generate_quiz)
-    st.markdown(
-        """
-        [Github 링크](https://github.com/kajj8808/gpt-challenge/tree/c96446ed451b2c66ed850097624b958b8ee9a595)
-        """
+    openai_api_key = st.text_input(
+        "OpenAI API Key", value=openai_api_key, type="password")
+
+    if openai_api_key:
+        st.session_state["openai_api_key"] = openai_api_key
+
+st.title("Site GPT")
+
+
+answers_prompt = ChatPromptTemplate.from_template(
+    """
+   Using ONLY the provided context, answer the user's question. If the context does not contain the necessary information, respond with "I don't know" and do not fabricate any information.
+
+    After providing your answer, assign a score between 0 and 5 based on how well your response addresses the user's question:
+    - 5: Fully answers the question.
+    - 4: Mostly answers the question.
+    - 3: Partially answers the question.
+    - 2: Minimally answers the question.
+    - 1: Barely answers the question.
+    - 0: Does not answer the question or is unrelated.
+
+    Always include the score, even if it's 0.
+
+    Context: {context}  
+    Question: {question}
+
+    Answer:
+
+    """)
+
+
+choose_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            Use ONLY the following pre-existing answers to answer the user's question.
+
+            Use the answers that have the highest score (more helpful) and favor the most recent ones.
+
+            Cite sources and return the sources of the answers as they are, do not change them.
+
+            Answers: {answers}
+            """,
+        ),
+        ("human", "{question}"),
+    ]
+)
+
+
+def parse_page(soup):
+    header = soup.find("header")
+    if header:
+        header.decompose()
+    return soup.get_text()
+
+
+def get_llm():
+    llm = ChatOpenAI(
+        model="gpt-3.5-turbo-0125",
+        temperature=0.1,
+        openai_api_key=openai_api_key,
     )
 
-if st.session_state["questions"]:
-    with st.form("questions_form"):
-        correct_count = 0
-        for i, question in enumerate(st.session_state["questions"]):
-            answer = st.radio(
-                question["question"],
-                [answer["answer"] for answer in question["answers"]],
-                index=None,
-                key=f"quiz_{st.session_state['quiz_id']}_{i}"
-            )
-            if {"answer": answer, "correct": True} in question["answers"]:
-                st.success("정답")
-                correct_count += 1
-            elif answer is not None:
-                st.error("오답")
+    return llm
 
-        is_submit = st.form_submit_button("제출")
-        if is_submit:
-            if len(st.session_state["questions"]) == correct_count:
-                st.balloons()
-            correct_count = 0
+
+@st.cache_data(show_spinner="Loading site content...")
+def load_website(url):
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=200,
+    )
+
+    loader = SitemapLoader(
+        url,
+        filter_urls=[
+            "https://developers.cloudflare.com/ai-gateway/",
+            "https://developers.cloudflare.com/vectorize/",
+            "https://developers.cloudflare.com/workers-ai/"
+        ],
+        parsing_function=parse_page,
+    )
+
+    docs = loader.load_and_split(splitter)
+    vector_store = FAISS.from_documents(
+        docs, OpenAIEmbeddings(openai_api_key=openai_api_key),
+    )
+    return vector_store.as_retriever()
+
+
+def get_answers(inputs):
+    docs = inputs["docs"]
+    question = inputs["question"]
+    llm = get_llm()
+    answers_chain = answers_prompt | llm
+
+    return {
+        "question": question,
+        "answer": [
+            {
+                "answer": answers_chain.invoke({
+                    "context": doc.page_content,
+                    "question": question
+                }).content,
+                "source": doc.metadata["source"],
+                "lastmod": doc.metadata["lastmod"],
+            } for doc in docs
+        ]
+    }
+
+
+def choose_answer(inputs):
+    question = inputs["question"]
+    answers = inputs["answer"]
+    llm = get_llm()
+    choose_chain = choose_prompt | llm
+    condensed = "\n\n".join(
+        f"Answer: {answer['answer']}\nSource: {answer['source']}\nLastmod: {answer['lastmod']}\n" for answer in answers
+    )
+
+    return choose_chain.invoke(
+        {
+            "question": question,
+            "answers": condensed,
+        }
+    )
+
+
+retriever = load_website("https://developers.cloudflare.com/sitemap-0.xml")
+
+
+query = st.text_input("Cloudflare공식 문서에 대해서 궁금한 점을 물어봐 보세요 !")
+
+if query:
+    # st.write(retriever.invoke(query))
+    chain = {
+        "docs": retriever,
+        "question": RunnablePassthrough(),
+    } | RunnableLambda(get_answers) | RunnableLambda(choose_answer)
+    result = chain.invoke(query)
+    st.write(result.content)
