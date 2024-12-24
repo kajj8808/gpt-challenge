@@ -5,9 +5,10 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks.base import BaseCallbackHandler
+from langchain.memory import ConversationBufferMemory
 
 
 class ChatCallbackHandler(BaseCallbackHandler):
@@ -37,12 +38,18 @@ if "openai_api_key" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
+if "memory" not in st.session_state:
+    st.session_state["memory"] = ConversationBufferMemory(return_messages=True)
+
+memory = st.session_state["memory"]
 messages = st.session_state["messages"]
 openai_api_key = st.session_state["openai_api_key"]
 
 with st.sidebar:
     openai_api_key = st.text_input(
-        "OpenAI API Key", value="", type="password")
+        "OpenAI API Key",
+        type="password",
+    )
 
     if openai_api_key:
         st.session_state["openai_api_key"] = openai_api_key
@@ -86,6 +93,7 @@ choose_prompt = ChatPromptTemplate.from_messages(
             Answers: {answers}
             """,
         ),
+        MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ]
 )
@@ -175,6 +183,7 @@ def choose_answer(inputs):
         {
             "question": question,
             "answers": condensed,
+            "history": load_memory(),
         }
     )
 
@@ -196,7 +205,12 @@ def send_message(message, role, save=True):
         save_message(role, message)
 
 
+def load_memory():
+    return memory.load_memory_variables({})["history"]
+
+
 if openai_api_key:
+    # st.write(load_memory())
     paint_message_history()
 
     retriever = load_website("https://developers.cloudflare.com/sitemap-0.xml")
@@ -212,3 +226,7 @@ if openai_api_key:
                 "question": RunnablePassthrough(),
             } | RunnableLambda(get_answers) | RunnableLambda(choose_answer)
             result = chain.invoke(query)
+
+            memory.save_context({"input": query}, {"output": result.content})
+else:
+    st.write("Side bar에서 OpenAI API Key를 입력해주세요.")
