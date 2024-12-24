@@ -54,6 +54,9 @@ with st.sidebar:
     if openai_api_key:
         st.session_state["openai_api_key"] = openai_api_key
 
+    st.sidebar.markdown(
+        "[GitHub Repository](https://github.com/kajj8808/gpt-challenge/tree/e2653c30b8df7208f3db3318e7da4a81f2a4fc57)"
+    )
 st.title("Site GPT")
 
 

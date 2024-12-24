@@ -16,4 +16,4 @@ Cloudflare 공식문서를 위한 SiteGPT 버전을 만드세요.
   - "Cloudflare의 AI 게이트웨이로 무엇을 할 수 있나요?"
   - "벡터라이즈에서 단일 계정은 몇 개의 인덱스를 가질 수 있나요?"
 - [x] 유저가 자체 OpenAI API 키를 사용하도록 허용하고, st.sidebar 내부의 st.input에서 이를 로드합니다.
-- [] st.sidebar를 사용하여 Streamlit app과 함께 깃허브 리포지토리에 링크를 넣습니다.
+- [x] st.sidebar를 사용하여 Streamlit app과 함께 깃허브 리포지토리에 링크를 넣습니다.
