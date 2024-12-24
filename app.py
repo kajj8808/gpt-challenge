@@ -1,3 +1,4 @@
+
 import streamlit as st
 from langchain.document_loaders import SitemapLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -6,16 +7,42 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain.prompts import ChatPromptTemplate
 from langchain.chat_models import ChatOpenAI
+from langchain.callbacks.base import BaseCallbackHandler
+
+
+class ChatCallbackHandler(BaseCallbackHandler):
+    message = ""
+
+    def __init__(self, should_stream, should_save):
+        self.should_stream = should_stream
+        self.should_save = should_save
+
+    def on_llm_start(self, serialized, *args, **kwargs):
+        if self.should_stream:
+            self.message_box = st.empty()
+
+    def on_llm_new_token(self, token: str, *args, **kwargs):
+        if self.should_stream:
+            self.message += token
+            self.message_box.markdown(self.message)
+
+    def on_llm_end(self, *args, **kwargs):
+        if self.should_save:
+            save_message("ai", self.message)
 
 
 if "openai_api_key" not in st.session_state:
     st.session_state["openai_api_key"] = None
 
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
+messages = st.session_state["messages"]
 openai_api_key = st.session_state["openai_api_key"]
 
 with st.sidebar:
     openai_api_key = st.text_input(
-        "OpenAI API Key", value=openai_api_key, type="password")
+        "OpenAI API Key", value="", type="password")
 
     if openai_api_key:
         st.session_state["openai_api_key"] = openai_api_key
@@ -71,11 +98,16 @@ def parse_page(soup):
     return soup.get_text()
 
 
-def get_llm():
+def get_llm(should_stream=False, should_save=False):
     llm = ChatOpenAI(
         model="gpt-3.5-turbo-0125",
         temperature=0.1,
         openai_api_key=openai_api_key,
+        streaming=True,
+        callbacks=[ChatCallbackHandler(
+            should_stream=should_stream,
+            should_save=should_save,
+        )],
     )
 
     return llm
@@ -129,7 +161,11 @@ def get_answers(inputs):
 def choose_answer(inputs):
     question = inputs["question"]
     answers = inputs["answer"]
-    llm = get_llm()
+    llm = get_llm(
+        should_stream=True,
+        should_save=True,
+    )
+
     choose_chain = choose_prompt | llm
     condensed = "\n\n".join(
         f"Answer: {answer['answer']}\nSource: {answer['source']}\nLastmod: {answer['lastmod']}\n" for answer in answers
@@ -143,16 +179,36 @@ def choose_answer(inputs):
     )
 
 
-retriever = load_website("https://developers.cloudflare.com/sitemap-0.xml")
+def paint_message_history():
+    for message in messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
 
 
-query = st.text_input("Cloudflare공식 문서에 대해서 궁금한 점을 물어봐 보세요 !")
+def save_message(role, content):
+    messages.append({"role": role, "content": content})
 
-if query:
-    # st.write(retriever.invoke(query))
-    chain = {
-        "docs": retriever,
-        "question": RunnablePassthrough(),
-    } | RunnableLambda(get_answers) | RunnableLambda(choose_answer)
-    result = chain.invoke(query)
-    st.write(result.content)
+
+def send_message(message, role, save=True):
+    with st.chat_message(role):
+        st.write(message)
+    if save:
+        save_message(role, message)
+
+
+if openai_api_key:
+    paint_message_history()
+
+    retriever = load_website("https://developers.cloudflare.com/sitemap-0.xml")
+
+    query = st.chat_input("Cloudflare공식 문서에 대해서 궁금한 점을 물어봐 보세요 !")
+
+    if query:
+        # st.write(retriever.invoke(query))
+        send_message(query, "user")
+        with st.chat_message("ai"):
+            chain = {
+                "docs": retriever,
+                "question": RunnablePassthrough(),
+            } | RunnableLambda(get_answers) | RunnableLambda(choose_answer)
+            result = chain.invoke(query)
