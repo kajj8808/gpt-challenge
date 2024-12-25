@@ -94,7 +94,7 @@ def choose_answer(inputs):
     return choose_chain.invoke(
         {
             "question": question,
-            "answers": answers,
+            "answers": condensed,
         },
     )
 
