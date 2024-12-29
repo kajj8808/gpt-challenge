@@ -220,7 +220,16 @@ def run_assistant_with_message(message):
 
     st.session_state.messages.append(
         {"role": "assistant", "content": get_response(st.session_state.thread.id)})
-    paint_messages()
+    with st.chat_message("assistant"):
+        st.write(get_response(st.session_state.thread.id))
+        st.download_button(
+            label="Download Text",
+            data=get_response(st.session_state.thread.id),
+            file_name="result.txt",
+            mime="text/plain",
+            # 다운로드 key => 유니크 해야 한다 해서 현재 시간을 키로 사용
+            key=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000)}"
+        )
 
 
 def add_message(role, content):
