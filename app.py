@@ -276,6 +276,8 @@ with st.sidebar:
                 tools=functions,
                 temperature=0.1,
             )
+    st.markdown(
+        "[github url](https://github.com/kajj8808/gpt-challenge/tree/ddc8b0957edc12a9441630a010d4ab5d9b768337)")
 
 paint_messages()
 
