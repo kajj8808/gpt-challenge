@@ -2,11 +2,13 @@ import openai as client
 import streamlit as st
 import time
 import json
+from datetime import datetime
 from langchain.tools import DuckDuckGoSearchResults  # link까지 나오는 duckduckgo
 from langchain.document_transformers import BeautifulSoupTransformer
 from langchain.document_loaders import AsyncChromiumLoader
 from langchain.tools import WikipediaQueryRun
 from langchain.utilities import WikipediaAPIWrapper
+
 ################################## 데이터 추출 파트 ##################################
 
 
@@ -180,6 +182,7 @@ if 'assistant' not in st.session_state:
         model="gpt-4o-mini",
         tools=functions,
         temperature=0.1,
+
     )
 
 if 'thread' not in st.session_state:
@@ -189,7 +192,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 if "api_key" not in st.session_state:
-    st.session_state.api_key = st.secrets["OPENAI_API_KEY"]
+    st.session_state.api_key = None
 
 
 def paint_state(state):
@@ -245,21 +248,24 @@ def paint_messages():
                     label="Download Text",
                     data=message['content'],
                     file_name="result.txt",
-                    mime="text/plain"
+                    mime="text/plain",
+                    # 현재 시간을 키로 사용
+                    key=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000)}"
                 )
 
 
 with st.sidebar:
     st.title("Openai Assistant")
     st.session_state.api_key = st.text_input(
-        "OpenAI API Key", type="password", value=st.secrets["OPENAI_API_KEY"]
+        "OpenAI API Key", type="password", value=st.session_state.api_key
     )
 
     st.markdown(
         "[github url](https://github.com/kajj8808/gpt-challenge/tree/openai-assistants)")
+paint_messages()
 
 if st.session_state.api_key:
-    paint_messages()
+    client.api_key = st.session_state.api_key
     message = st.chat_input("Research Assistant!")
 
     if message:
