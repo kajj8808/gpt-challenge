@@ -1,20 +1,23 @@
 import openai as client
 import streamlit as st
-from langchain.retrievers import WikipediaRetriever
+import time
+import json
 from langchain.tools import DuckDuckGoSearchResults  # link까지 나오는 duckduckgo
 from langchain.document_transformers import BeautifulSoupTransformer
 from langchain.document_loaders import AsyncChromiumLoader
+from langchain.tools import WikipediaQueryRun
+from langchain.utilities import WikipediaAPIWrapper
 ################################## 데이터 추출 파트 ##################################
 
 
-@st.cache_data(show_spinner="웹 찾아보는중...")
 def search_duckduckgo(query):
-    ddg = DuckDuckGoSearchResults()
+
+    ddg = DuckDuckGoSearchResults(
+        backend="auto", include_links=True, include_text=True, include_images=True, top_k=2)
     return ddg.run(query)
 
 
-@st.cache_data(show_spinner="웹 페이지 찾아보는중...")
-def webpage_scraper(url):
+def scrape_website(url):
     loader = AsyncChromiumLoader([url])
     docs = loader.load()
     bs_transformer = BeautifulSoupTransformer()
@@ -30,20 +33,17 @@ def webpage_scraper(url):
     return text
 
 
-@st.cache_data(show_spinner="위키피디아 검색중...")
 def search_wikipedia(query):
-    retriever = WikipediaRetriever(
-        top_k_results=1,
-    )
-    docs = retriever.get_relevant_documents(query)
-    return "\n\n".join([doc.page_content for doc in docs])
+    wiki = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
+    docs = wiki.run(query)
+    return docs
 
 
 ################################## OpenAI function 파트 ##################################
 functions_map = {
     "search_wikipedia": search_wikipedia,
     "search_duckduckgo": search_duckduckgo,
-    "webpage_scraper": webpage_scraper,
+    "scrape_website": scrape_website,
 }
 
 functions = [
@@ -67,7 +67,7 @@ functions = [
     {
         "type": "function",
         "function": {
-            "name": "search_web",
+            "name": "search_duckduckgo",
             "description": "DuckDuckGo를 사용하여 웹에서 정보를 검색합니다.",
             "parameters": {
                 "type": "object",
@@ -84,8 +84,8 @@ functions = [
     {
         "type": "function",
         "function": {
-            "name": "webpage_scraper",
-            "description": "웹페이지를 스크래핑하여 결과를 반환합니다.",
+            "name": "scrape_website",
+            "description": "웹페이지를 스크래핑 합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -99,48 +99,170 @@ functions = [
         }
     }
 ]
-################################## OpenAI Agent 파트 ##################################
+
+################################## OpenAI Assistant 파트 ##################################
 
 
-@st.cache_data(show_spinner="AI 에이전트 생성중...")
-def get_assistant():
-    assistant = client.beta.assistants.create(
-        name="Search Assistant",
-        instructions="당신은 사용자의 질문에 대해 적절한 도구를 선택하여 검색을 수행합니다.",
-        model="gpt-4o-mini",
-        tools=functions,
-    )
-    return assistant
-
-
-@st.cache_data(show_spinner="스레드 생성중...")
-def create_thread():
-    thread = client.beta.threads.create()
-    return thread
-
-
-def add_message_to_thread(thread_id, message):
-    return client.beta.threads.messages.create(thread_id, role="user", content=message)
-
-
-def run_assistant(thread_id, assistant_id, message):
-    run = client.beta.threads.runs.create(
+def run_assistant(thread_id, assistant_id):
+    return client.beta.threads.runs.create(
         thread_id=thread_id,
         assistant_id=assistant_id,
-        instructions=message,
     )
-    return run
+
+
+def get_run(run_id, thread_id):
+    return client.beta.threads.runs.retrieve(
+        run_id=run_id,
+        thread_id=thread_id
+    )
+
+
+def send_message(thread_id, content):
+    return client.beta.threads.messages.create(
+        thread_id=thread_id, role="user", content=content
+    )
 
 
 def wait_on_run(run_id, thread_id):
-    import time
     while True:
-        run_status = get_run_status(run_id=run_id, thread_id=thread_id)
-        if run_status.status == "completed":
+        run = get_run(run_id, thread_id)
+        if run.status == 'queued':
+            return run
+        elif run.status in ['failed', 'expired', 'cancelled']:
+            raise Exception(f"Run failed with status: {run.status}")
+        time.sleep(0.5)
+
+
+def get_response(thread_id):
+    messages = client.beta.threads.messages.list(
+        thread_id=thread_id
+    )
+    return messages.data[0].content[0].text.value
+
+
+def get_tool_outputs(run_id, thread_id):
+    run = get_run(run_id, thread_id)
+    outputs = []
+    for action in run.required_action.submit_tool_outputs.tool_calls:
+        action_id = action.id
+        function = action.function
+        # json.loads를 사용하는 이유는 응답이 text로 오기에, python에서 사용할 수 있도록 변환 해주는 과정이 필요하기 때문임.
+        output = functions_map[function.name](json.loads(function.arguments))
+        outputs.append({
+            "output": output,
+            "tool_call_id": action_id,
+        })
+    # 결과를 보내기 위해 call id(call_j6Yk2GlAEcoZCfsxTTqn1ARm)들의 결과를 return!
+    return outputs
+
+
+def submit_tool_outputs(run_id, thread_id):
+    outputs = get_tool_outputs(run_id, thread_id)
+    return client.beta.threads.runs.submit_tool_outputs(
+        run_id=run_id,
+        thread_id=thread_id,
+        tool_outputs=outputs
+    )
+
+
+################################## Streamlit 파트 ##################################
+# Assistant 초기화
+if 'assistant' not in st.session_state:
+
+    st.session_state.assistant = client.beta.assistants.create(
+        name="Research Assistant",
+        instructions=""" 
+        당신은 검색 AI 에이전트 입니다.
+        주어진 주제에 대해 사용할 수 있는 모든 도구를 사용하여 정확한 정보를 수집하세요. 
+    
+        모든 출처와 URL을 포함해야 합니다.
+        """,
+        model="gpt-4o-mini",
+        tools=functions,
+        temperature=0.1,
+    )
+
+if 'thread' not in st.session_state:
+    st.session_state.thread = client.beta.threads.create()
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "api_key" not in st.session_state:
+    st.session_state.api_key = st.secrets["OPENAI_API_KEY"]
+
+
+def paint_state(state):
+    if state == 'queued':
+        return "**queued** -> requires_action -> completed"
+    elif state == 'requires_action':
+        return "queued -> **requires_action** -> completed"
+    elif state == 'completed':
+        return "queued -> requires_action -> **completed**"
+
+
+def run_assistant_with_message(message):
+    # state 표시 queued -> requires_action -> completed
+    send_message(st.session_state.thread.id, message)
+
+    run = run_assistant(
+        st.session_state.thread.id,
+        st.session_state.assistant.id,
+    )
+    # 상태 표시 이때 나머지는 회색으로
+    assistant_state = st.markdown(paint_state(run.status))
+    while True:
+        run = get_run(run.id, st.session_state.thread.id)
+        if run.status == 'requires_action':
             break
         time.sleep(0.5)
-    return run_status
+
+    submit_tool_outputs(run.id, st.session_state.thread.id)
+    assistant_state.markdown(paint_state(run.status))
+
+    while True:
+        run = get_run(run.id, st.session_state.thread.id)
+        if run.status == 'completed':
+            break
+        time.sleep(0.5)
+    assistant_state.markdown(paint_state(run.status))
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": get_response(st.session_state.thread.id)})
+    paint_messages()
 
 
-def get_run_status(run_id, thread_id):
-    return client.beta.threads.runs.retrieve(run_id=run_id, thread_id=thread_id)
+def add_message(role, content):
+    st.session_state.messages.append({"role": role, "content": content})
+
+
+def paint_messages():
+    for message in st.session_state.messages:
+        with st.chat_message(message['role']):
+            st.write(message['content'])
+            if message['role'] == 'assistant':
+                st.download_button(
+                    label="Download Text",
+                    data=message['content'],
+                    file_name="result.txt",
+                    mime="text/plain"
+                )
+
+
+with st.sidebar:
+    st.title("Openai Assistant")
+    st.session_state.api_key = st.text_input(
+        "OpenAI API Key", type="password", value=st.secrets["OPENAI_API_KEY"]
+    )
+
+    st.markdown(
+        "[github url](https://github.com/kajj8808/gpt-challenge/tree/openai-assistants)")
+
+if st.session_state.api_key:
+    paint_messages()
+    message = st.chat_input("Research Assistant!")
+
+    if message:
+        add_message("user", message)
+        paint_messages()
+        run_assistant_with_message(message)
