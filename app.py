@@ -249,10 +249,19 @@ with st.sidebar:
         "[github url](https://github.com/kajj8808/gpt-challenge/tree/openai-assistants)")
 paint_messages()
 
+
+if st.session_state.api_key:
+    client.api_key = st.session_state.api_key
+    message = st.chat_input("Research Assistant!")
+
+    if message:
+        add_message("user", message)
+        paint_messages()
+        run_assistant_with_message(message)
+
 if st.session_state.api_key:
     # Assistant 초기화
     if 'assistant' not in st.session_state:
-
         st.session_state.assistant = client.beta.assistants.create(
             name="Research Assistant",
             instructions=""" 
@@ -264,14 +273,4 @@ if st.session_state.api_key:
             model="gpt-4o-mini",
             tools=functions,
             temperature=0.1,
-
         )
-
-if st.session_state.api_key:
-    client.api_key = st.session_state.api_key
-    message = st.chat_input("Research Assistant!")
-
-    if message:
-        add_message("user", message)
-        paint_messages()
-        run_assistant_with_message(message)
