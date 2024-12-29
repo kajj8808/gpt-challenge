@@ -171,13 +171,16 @@ def submit_tool_outputs(run_id, thread_id):
 
 
 if 'thread' not in st.session_state:
-    st.session_state.thread = client.beta.threads.create()
+    st.session_state.thread = None
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 if "api_key" not in st.session_state:
     st.session_state.api_key = None
+
+if "assistant" not in st.session_state:
+    st.session_state.assistant = None
 
 
 def paint_state(state):
@@ -241,12 +244,30 @@ def paint_messages():
 
 with st.sidebar:
     st.title("Openai Assistant")
-    st.session_state.api_key = st.text_input(
+    api_key_input = st.text_input(
         "OpenAI API Key", type="password", value=st.session_state.api_key
     )
-    client.api_key = st.session_state.api_key  # API 키 즉시 설정
-    st.markdown(
-        "[github url](https://github.com/kajj8808/gpt-challenge/tree/openai-assistants)")
+
+    if api_key_input:
+        st.session_state.api_key = api_key_input
+        client.api_key = api_key_input
+        # API 키가 입력되면 thread와 assistant 초기화
+        if not st.session_state.thread:
+            st.session_state.thread = client.beta.threads.create()
+        if not st.session_state.assistant:
+            st.session_state.assistant = client.beta.assistants.create(
+                name="Research Assistant",
+                instructions=""" 
+                당신은 검색 AI 에이전트 입니다.
+                주어진 주제에 대해 사용할 수 있는 모든 도구를 사용하여 정확한 정보를 수집하세요. 
+            
+                모든 출처와 URL을 포함해야 합니다.
+                """,
+                model="gpt-4-turbo-preview",
+                tools=functions,
+                temperature=0.1,
+            )
+
 paint_messages()
 
 
@@ -258,19 +279,3 @@ if st.session_state.api_key:
         add_message("user", message)
         paint_messages()
         run_assistant_with_message(message)
-
-if st.session_state.api_key:
-    # Assistant 초기화
-    if 'assistant' not in st.session_state:
-        st.session_state.assistant = client.beta.assistants.create(
-            name="Research Assistant",
-            instructions=""" 
-            당신은 검색 AI 에이전트 입니다.
-            주어진 주제에 대해 사용할 수 있는 모든 도구를 사용하여 정확한 정보를 수집하세요. 
-        
-            모든 출처와 URL을 포함해야 합니다.
-            """,
-            model="gpt-4o-mini",
-            tools=functions,
-            temperature=0.1,
-        )
