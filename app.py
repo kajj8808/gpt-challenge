@@ -287,6 +287,7 @@ if st.session_state.api_key:
     message = st.chat_input("Research Assistant!")
 
     if message:
+        with st.chat_message("user"):
+            st.write(get_response(st.session_state.thread.id))
         add_message("user", message)
-        paint_messages()
         run_assistant_with_message(message)
