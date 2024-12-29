@@ -168,22 +168,7 @@ def submit_tool_outputs(run_id, thread_id):
 
 
 ################################## Streamlit 파트 ##################################
-# Assistant 초기화
-if 'assistant' not in st.session_state:
 
-    st.session_state.assistant = client.beta.assistants.create(
-        name="Research Assistant",
-        instructions=""" 
-        당신은 검색 AI 에이전트 입니다.
-        주어진 주제에 대해 사용할 수 있는 모든 도구를 사용하여 정확한 정보를 수집하세요. 
-    
-        모든 출처와 URL을 포함해야 합니다.
-        """,
-        model="gpt-4o-mini",
-        tools=functions,
-        temperature=0.1,
-
-    )
 
 if 'thread' not in st.session_state:
     st.session_state.thread = client.beta.threads.create()
@@ -212,7 +197,7 @@ def run_assistant_with_message(message):
         st.session_state.thread.id,
         st.session_state.assistant.id,
     )
-    # 상태 표시 이때 나머지는 회색으로
+    # 상태 표시 이때 현재 상태만 일단.. 간단하게라도 표시
     assistant_state = st.markdown(paint_state(run.status))
     while True:
         run = get_run(run.id, st.session_state.thread.id)
@@ -249,7 +234,7 @@ def paint_messages():
                     data=message['content'],
                     file_name="result.txt",
                     mime="text/plain",
-                    # 현재 시간을 키로 사용
+                    # 다운로드 key => 유니크 해야 한다 해서 현재 시간을 키로 사용
                     key=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000)}"
                 )
 
@@ -263,6 +248,24 @@ with st.sidebar:
     st.markdown(
         "[github url](https://github.com/kajj8808/gpt-challenge/tree/openai-assistants)")
 paint_messages()
+
+if st.session_state.api_key:
+    # Assistant 초기화
+    if 'assistant' not in st.session_state:
+
+        st.session_state.assistant = client.beta.assistants.create(
+            name="Research Assistant",
+            instructions=""" 
+            당신은 검색 AI 에이전트 입니다.
+            주어진 주제에 대해 사용할 수 있는 모든 도구를 사용하여 정확한 정보를 수집하세요. 
+        
+            모든 출처와 URL을 포함해야 합니다.
+            """,
+            model="gpt-4o-mini",
+            tools=functions,
+            temperature=0.1,
+
+        )
 
 if st.session_state.api_key:
     client.api_key = st.session_state.api_key
