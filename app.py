@@ -288,6 +288,6 @@ if st.session_state.api_key:
 
     if message:
         with st.chat_message("user"):
-            st.write(get_response(st.session_state.thread.id))
+            st.write(message)
         add_message("user", message)
         run_assistant_with_message(message)
