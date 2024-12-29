@@ -244,7 +244,7 @@ with st.sidebar:
     st.session_state.api_key = st.text_input(
         "OpenAI API Key", type="password", value=st.session_state.api_key
     )
-
+    client.api_key = st.session_state.api_key  # API 키 즉시 설정
     st.markdown(
         "[github url](https://github.com/kajj8808/gpt-challenge/tree/openai-assistants)")
 paint_messages()
